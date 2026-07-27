@@ -2,7 +2,6 @@
 
 **Loxosceles** é uma ferramenta de recon para pentest que vasculha o histórico do **Wayback Machine** (e outras fontes) atrás de rotas esquecidas de um site — painéis antigos, backups, endpoints de API, arquivos de config — tudo que já existiu publicamente em algum momento e pode ter ficado pra trás sem ninguém lembrar.
 
-O nome é do gênero da aranha-marrom: vive escondida em cantos escuros e esquecidos da casa, e só é notada quando já é tarde demais. É exatamente esse o tipo de rota que essa ferramenta procura.
 
 ![Loxosceles em ação](assets/demo.gif)
 
