@@ -19,7 +19,7 @@ Tudo isso numa interface de terminal dividida em duas: rotas encontradas de um l
 
 ## Instalação
 
-Requer Python 3.10+ e `curl`. Opcionalmente, [`gau`](https://github.com/lc/gau) e/ou [`waybackurls`](https://github.com/tomnomnom/waybackurls) instalados (via `go install`) pra fontes mais completas — sem eles a ferramenta cai automaticamente para a busca manual na CDX API.
+Requer Python 3.10+ e `curl`.
 
 ```bash
 git clone https://github.com/Jugolino/Loxosceles.git
@@ -27,7 +27,12 @@ cd Loxosceles
 ./install.sh
 ```
 
-O `install.sh` cria um ambiente virtual isolado (não mexe no seu Python do sistema) e instala o comando `Loxosceles` em `~/.local/bin`. Depois disso, rode de qualquer lugar:
+O `install.sh` faz tudo:
+- cria um ambiente virtual isolado (não mexe no seu Python do sistema);
+- instala o comando `Loxosceles` — em `/usr/local/bin` se tiver permissão (rodando como root, por exemplo), senão em `~/.local/bin`;
+- instala [`gau`](https://github.com/lc/gau) e [`waybackurls`](https://github.com/tomnomnom/waybackurls) automaticamente via `go install` (instalando o Go também, se precisar). Se algum desses passos falhar (sem internet, sem `apt`, etc), a ferramenta continua funcionando normalmente e cai para a busca manual na CDX API do Wayback Machine.
+
+Depois disso, rode de qualquer lugar, igual qualquer outra ferramenta de linha de comando:
 
 ```bash
 Loxosceles seudominio.com
