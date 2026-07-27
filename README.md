@@ -69,9 +69,6 @@ Se a fonte preferida falhar ou não estiver instalada, a ferramenta cai pra pró
 
 ![Fallback em cascata](assets/screenshot-fallback.png)
 
-## Aviso legal
-
-Use apenas em domínios que você tem autorização explícita para testar (programas de bug bounty, pentest contratado, seus próprios projetos). Rotas encontradas no Wayback Machine podem incluir informação sensível — trate os resultados com responsabilidade e reporte achados por canais adequados de disclosure.
 
 ## Licença
 
