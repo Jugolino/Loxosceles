@@ -25,6 +25,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+from rich.style import Style
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Header, Footer, Input, DataTable, RichLog, Static
@@ -147,6 +149,8 @@ class LoxoscelesApp(App):
         ("s", "save", "Salvar resultados"),
         ("r", "restart", "Nova busca"),
         ("p", "toggle_probe", "Ligar/desligar verificacao"),
+        ("o", "open_route", "Abrir rota no navegador"),
+        ("y", "copy_route", "Copiar URL da rota"),
     ]
 
     total_found = reactive(0)
@@ -163,6 +167,8 @@ class LoxoscelesApp(App):
         self.active_source = "-"
         self.routes: dict[str, Route] = {}
         self._row_keys: dict[str, object] = {}
+        self._log_line_for_path: dict[str, int] = {}
+        self._selected_path: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -217,13 +223,44 @@ class LoxoscelesApp(App):
     def watch_total_interesting(self, _):
         self._refresh_stats()
 
-    def log_activity(self, msg: str, style: str = "") -> None:
+    def log_activity(self, msg: str, style: str = "") -> int:
         ts = datetime.now().strftime("%H:%M:%S")
         log = self.query_one("#activity", RichLog)
-        if style:
-            log.write(f"[dim]{ts}[/] [{style}]{msg}[/{style}]")
-        else:
-            log.write(f"[dim]{ts}[/] {msg}")
+        line = Text()
+        line.append(f"{ts} ", style="dim")
+        line.append(msg, style=style or None)
+        line_index = len(log.lines)
+        log.write(line)
+        return line_index
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        path = event.row_key.value
+        if path is None:
+            return
+        self._selected_path = path
+        line_index = self._log_line_for_path.get(path)
+        log = self.query_one("#activity", RichLog)
+        if line_index is None:
+            self.notify(f"Sem atividade registrada ainda para {path}", severity="warning", timeout=3)
+            return
+        target_y = max(0, line_index - log.size.height // 2)
+        log.scroll_to(y=target_y, animate=True)
+
+    def action_open_route(self) -> None:
+        route = self.routes.get(self._selected_path) if self._selected_path else None
+        if route is None:
+            self.notify("Nenhuma rota selecionada.", severity="warning", timeout=3)
+            return
+        self.open_url(route.url)
+        self.log_activity(f"Aberto no navegador: {route.url}", "dim")
+
+    def action_copy_route(self) -> None:
+        route = self.routes.get(self._selected_path) if self._selected_path else None
+        if route is None:
+            self.notify("Nenhuma rota selecionada.", severity="warning", timeout=3)
+            return
+        self.copy_to_clipboard(route.url)
+        self.notify(f"URL copiada: {route.url}", timeout=3)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "domain_input":
@@ -245,6 +282,8 @@ class LoxoscelesApp(App):
         table.clear()
         self.routes.clear()
         self._row_keys.clear()
+        self._log_line_for_path.clear()
+        self._selected_path = None
         self.total_found = 0
         self.total_verified = 0
         self.total_interesting = 0
@@ -263,7 +302,7 @@ class LoxoscelesApp(App):
             if path not in seen_paths:
                 seen_paths[path] = full_url
 
-        self.log_activity(f"[bold green]{len(seen_paths)}[/bold green] rotas unicas encontradas ({len(urls)} URLs brutas no total).")
+        self.log_activity(f"{len(seen_paths)} rotas unicas encontradas ({len(urls)} URLs brutas no total).", "bold green")
 
         for path, url in sorted(seen_paths.items()):
             interesting = bool(INTERESTING_RE.search(path))
@@ -272,8 +311,9 @@ class LoxoscelesApp(App):
             note = "⚠" if interesting else ""
             style = "bold red" if interesting else ""
             display_path = path if len(path) <= 58 else path[:57] + "…"
+            cell_style = (Style.parse(style) if style else Style()) + Style(link=url)
             row_key = table.add_row(
-                f"[{style}]{display_path}[/{style}]" if style else display_path,
+                Text(display_path, style=cell_style),
                 "...",
                 note,
                 key=path,
@@ -317,7 +357,7 @@ class LoxoscelesApp(App):
         return await self.fetch_cdx_urls(domain)
 
     async def fetch_via_gau(self, domain: str) -> list[str] | None:
-        self.log_activity(f"Usando [bold]gau[/bold] (wayback + commoncrawl + otx + urlscan) para [bold]{domain}[/bold]...")
+        self.log_activity(f"Usando gau (wayback + commoncrawl + otx + urlscan) para {domain}...")
         cmd = ["gau", "--subs", "--threads", str(max(self.concurrency, 5))]
         self.log_activity(f"$ echo {domain} | {' '.join(cmd)}", "dim cyan")
         code, out, err = await run_cmd(*cmd, input_data=domain, timeout=150.0)
@@ -327,7 +367,7 @@ class LoxoscelesApp(App):
         return [line.strip() for line in out.splitlines() if line.strip()]
 
     async def fetch_via_waybackurls(self, domain: str) -> list[str] | None:
-        self.log_activity(f"Usando [bold]waybackurls[/bold] para [bold]{domain}[/bold]...")
+        self.log_activity(f"Usando waybackurls para {domain}...")
         cmd = ["waybackurls"]
         self.log_activity(f"$ echo {domain} | {' '.join(cmd)}", "dim cyan")
         code, out, err = await run_cmd(*cmd, input_data=domain, timeout=120.0)
@@ -341,7 +381,7 @@ class LoxoscelesApp(App):
         waybackurls nao estao instalados). Tenta primeiro com collapse=urlkey
         (mais leve para transferir), e se a API travar/der 504 (comum em
         dominios grandes), cai para uma busca sem collapse com dedup no cliente."""
-        self.log_activity(f"Consultando Wayback Machine (CDX API) diretamente para [bold]{domain}[/bold]...")
+        self.log_activity(f"Consultando Wayback Machine (CDX API) diretamente para {domain}...")
 
         collapsed_url = (
             "https://web.archive.org/cdx/search/cdx"
@@ -397,7 +437,7 @@ class LoxoscelesApp(App):
         sem = asyncio.Semaphore(self.concurrency)
         tasks = [self.probe_one(sem, path, route.url) for path, route in self.routes.items()]
         await asyncio.gather(*tasks)
-        self.log_activity("[bold green]Verificacao concluida.[/bold green]")
+        self.log_activity("Verificacao concluida.", "bold green")
 
     async def probe_one(self, sem: asyncio.Semaphore, path: str, url: str) -> None:
         async with sem:
@@ -414,13 +454,14 @@ class LoxoscelesApp(App):
             interesting = self.routes[path].interesting
             style = status_style(status, interesting)
             result_style = "bold red" if (interesting and status.startswith("2")) else style
-            self.log_activity(f"  -> {path} = {status}", result_style)
+            line_index = self.log_activity(f"  -> {path} = {status}", result_style)
+            self._log_line_for_path[path] = line_index
 
             table = self.query_one("#routes_table", DataTable)
             row_key = self._row_keys.get(path)
             if row_key is not None:
                 try:
-                    table.update_cell(row_key, "status", f"[{style}]{status}[/{style}]")
+                    table.update_cell(row_key, "status", Text(status, style=style))
                 except Exception:
                     pass
             self.total_verified += 1
@@ -437,6 +478,8 @@ class LoxoscelesApp(App):
         table.clear()
         self.routes.clear()
         self._row_keys.clear()
+        self._log_line_for_path.clear()
+        self._selected_path = None
         self.total_found = 0
         self.total_verified = 0
         self.total_interesting = 0
@@ -463,7 +506,7 @@ class LoxoscelesApp(App):
             for r in sorted(self.routes.values(), key=lambda r: r.path)
         ]
         out_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
-        self.log_activity(f"[bold green]Resultados salvos em {out_file}[/bold green]")
+        self.log_activity(f"Resultados salvos em {out_file}", "bold green")
 
 
 def main() -> None:
